@@ -2,26 +2,33 @@
 # -*- scheme -*-
 exec guile -e main -s "$0" "$@"
 !#
-;;; bf.scm --- Un interprete Brainfuck in Guile.
+;;; octet.scm --- A Brainfuck interpreter in Guile.
 ;;;
-;;; Design in due fasi:
-;;;   1. parse : stringa -> AST.  I sei comandi semplici diventano simboli,
-;;;      i cicli [...] diventano nodi (loop . corpo) annidati.
-;;;   2. run   : esegue l'AST su un "nastro" rappresentato come zipper.
+;;; The pipeline has three stages:
+;;;   1. parse   : string -> AST.  The six primitive commands become
+;;;      symbols, and [...] loops become nested (loop . body) nodes.  The
+;;;      parser also validates bracket matching (see parse-instrs below).
+;;;   2. compile : AST -> closures.  Each node is turned into a single
+;;;      tape -> tape function once, so the match-based dispatch on the
+;;;      node's shape happens at compile time, not on every execution.
+;;;   3. run     : just calling the compiled top-level closure on a fresh
+;;;      tape.  All "execution" is function application; the only
+;;;      remaining state is the tape value threaded from call to call.
 ;;;
-;;; Il nastro e' una lista (left cur right):
-;;;   - cur   : la cella sotto il puntatore
-;;;   - left  : celle a sinistra, la piu' vicina in testa (ordine invertito)
-;;;   - right : celle a destra, la piu' vicina in testa
-;;; Muovere il puntatore e' quindi solo cons/uncons: O(1), nessuna mutazione.
+;;; The tape is a list (left cur right) -- a Huet-style zipper:
+;;;   - cur   : the cell currently under the pointer
+;;;   - left  : cells to the left of the pointer, closest one at the head
+;;;             (i.e. stored in reverse order, since that's the end the
+;;;             pointer moves through)
+;;;   - right : cells to the right of the pointer, closest one at the head
+;;; Moving the pointer is therefore plain cons/uncons: O(1) and purely
+;;; functional -- no cell array is ever mutated in place.
 
 (use-modules (ice-9 match)
              (ice-9 textual-ports)        ; get-string-all
-             (ice-9 binary-ports))        ; put-u8, get-u8: I/O a byte grezzi,
-; indipendente dall'encoding del
-; terminale (serve con celle > 8 bit)
+             (ice-9 binary-ports))        ; put-u8, get-u8: raw byte I/O (see write-output-byte below)
 
-;;; ---------------------------------------------------------------- Il nastro
+;;; ----------------------------------------------------------------- The tape
 
 (define (make-tape) (list '() 0 '()))
 
@@ -34,8 +41,9 @@ exec guile -e main -s "$0" "$@"
 (define (tape-update t f)
   (match t ((left cur right) (list left (f cur) right))))
 
-;; Muovi a destra: la vecchia cur va in testa a left; la nuova cur e' la
-;; prima di right (o 0 se il nastro non e' ancora stato esteso li').
+;; Move right: the old cur is pushed onto the head of left; the new cur
+;; is the head of right (or 0 if the tape hasn't been extended that far
+;; yet, i.e. this cell has never been visited before).
 (define (tape-right t)
   (match t
          ((left cur '())        (list (cons cur left) 0 '()))
@@ -46,10 +54,11 @@ exec guile -e main -s "$0" "$@"
          ((()       cur right)  (list '() 0 (cons cur right)))
          (((l . ls) cur right)  (list ls  l (cons cur right)))))
 
-;;; ------------------------------------------------------------------ Il parser
+;;; --------------------------------------------------------------- The parser
 
-;; Annota ogni carattere con la sua posizione (riga, colonna), 1-based,
-;; cosi' il parser puo' segnalare le parentesi sbilanciate con precisione.
+;; Annotates each character with its position (line, column), 1-based, so
+;; the parser can report unbalanced brackets precisely rather than just
+;; pointing at "somewhere in the file".
 (define (annotate str)
   (let loop ((chars (string->list str)) (line 1) (col 1) (acc '()))
     (if (null? chars)
@@ -62,18 +71,19 @@ exec guile -e main -s "$0" "$@"
 (define (parse-error line col msg)
   (throw 'bf-parse-error line col msg))
 
-;; Legge una sequenza di istruzioni finche' non trova ] o la fine.
-;; Ritorna (values istruzioni resto), dove `resto` sono i caratteri dopo
-;; il ] che chiude (o '() a fine input).
+;; Reads a sequence of instructions until it hits ] or runs out of input.
+;; Returns (values instructions rest), where `rest` is the characters
+;; remaining after the closing ] (or '() at end of input).
 ;;
-;; `open-pos` e' #f al livello piu' esterno, oppure (line . col) della '['
-;; che ha aperto questo livello: serve per segnalare un ciclo non chiuso
-;; con la posizione di apertura, non quella (inesistente) di chiusura.
+;; `open-pos` is #f at the outermost level, or the (line . col) of the '['
+;; that opened the current level.  This is what lets an unclosed loop be
+;; reported at the position where it was *opened* -- there is no closing
+;; position to point to, since the file simply ends.
 (define (parse-instrs chars open-pos)
   (let loop ((chars chars) (acc '()))
     (if (null? chars)
       (if open-pos
-        (parse-error (car open-pos) (cdr open-pos) "'[' non chiuso")
+        (parse-error (car open-pos) (cdr open-pos) "unclosed '['")
         (values (reverse acc) '()))
       (match (car chars)
              ((c line col)
@@ -93,24 +103,25 @@ exec guile -e main -s "$0" "$@"
                   ((#\])
                    (if open-pos
                      (values (reverse acc) rest)
-                     (parse-error line col "']' senza '[' corrispondente")))
-                  (else (loop rest acc)))))))))     ; ogni altro carattere: commento
+                     (parse-error line col "']' without a matching '['")))
+                  ;; any other character is a Brainfuck comment: ignore it
+                  (else (loop rest acc)))))))))
 
 (define (parse str)
   (call-with-values
     (lambda () (parse-instrs (annotate str) #f))
     (lambda (instrs _rest) instrs)))
 
-;;; ------------------------------------------------------------ Il compilatore
+;;; ------------------------------------------------------------- The compiler
 
-;; Ogni nodo dell'AST diventa una closure tape -> tape: il dispatch con
-;; match avviene una sola volta, in fase di compilazione, non ad ogni
-;; iterazione di un loop.
+;; Each AST node is turned into a tape -> tape closure: the match-based
+;; dispatch on the node's shape happens once, at compile time, instead of
+;; being redone on every single iteration of a loop's body.
 
-;; Due convenzioni che il Brainfuck "classico" fissa arbitrariamente, e che
-;; qui sono parametri dinamici anziche' costanti — main le imposta da riga
-;; di comando, il default riproduce il comportamento originale (celle a 8
-;; bit, EOF -> 0).
+;; Two conventions that "classic" Brainfuck fixes arbitrarily are modeled
+;; here as dynamic parameters rather than constants -- main sets them from
+;; the command line (--cell-bits, --eof), and their defaults reproduce the
+;; original, non-configurable behavior: 8-bit cells, EOF reads as 0.
 (define cell-bits (make-parameter 8))
 (define eof-mode  (make-parameter 'zero))  ; 'zero | 'minus-one | 'unchanged
 
@@ -125,9 +136,11 @@ exec guile -e main -s "$0" "$@"
         ((unchanged) tape))
       (tape-set tape (wrap b)))))
 
-;; L'output resta sempre un byte (0-255): la cella puo' essere piu' larga
-;; di 8 bit, ma "un carattere in output" e' per convenzione il suo byte
-;; basso — coerente con le altre implementazioni Brainfuck a celle larghe.
+;; Output is always a single byte (0-255): a cell may be wider than 8
+;; bits when --cell-bits is used, but "a character of output" is by
+;; convention its low byte -- this matches how other Brainfuck
+;; implementations with wide cells behave, and keeps the output stream
+;; byte-oriented regardless of the configured cell width.
 (define (write-output-byte tape)
   (put-u8 (current-output-port) (modulo (tape-ref tape) 256))
   tape)
@@ -143,14 +156,16 @@ exec guile -e main -s "$0" "$@"
          (('loop . body)
           (let ((run-body (compile-seq body)))
             (lambda (tape)
-              ;; ripeti il corpo finche' la cella corrente non e' zero
+              ;; Repeat the body while the current cell is non-zero.  The
+              ;; body was compiled once, above, outside this loop -- each
+              ;; iteration just applies the resulting closure.
               (let iterate ((tape tape))
                 (if (zero? (tape-ref tape))
                   tape
                   (iterate (run-body tape)))))))))
 
-;; Compila una lista di istruzioni in un'unica closure che le fila in
-;; sequenza sul nastro.
+;; Compiles a list of instructions into a single closure that threads the
+;; tape through each of them in sequence.
 (define (compile-seq instrs)
   (let ((fns (map compile-instr instrs)))
     (lambda (tape)
@@ -159,7 +174,7 @@ exec guile -e main -s "$0" "$@"
           tape
           (run (cdr fns) ((car fns) tape)))))))
 
-;;; ---------------------------------------------------------- Interfaccia utente
+;;; --------------------------------------------------- Command-line interface
 
 (define (run-string src)
   ((compile-seq (parse src)) (make-tape))
@@ -170,10 +185,10 @@ exec guile -e main -s "$0" "$@"
 
 (define (usage-error)
   (format (current-error-port)
-          "uso: bf.scm [--cell-bits=N] [--eof=zero|minus-one|unchanged] PROGRAMMA.bf~%")
+          "usage: octet.scm [--cell-bits=N] [--eof=zero|minus-one|unchanged] PROGRAM.bf~%")
   (exit 2))
 
-;; Se arg inizia per prefix ritorna il resto della stringa, altrimenti #f.
+;; If arg starts with prefix, returns the rest of the string; #f otherwise.
 (define (flag-value prefix arg)
   (let ((plen (string-length prefix)))
     (and (>= (string-length arg) plen)
@@ -182,10 +197,10 @@ exec guile -e main -s "$0" "$@"
 
 (define (parse-cell-bits s)
   (let ((n (string->number s)))
-    (if (and n (integer? n) (positive? n))
+    (if (and n (exact-integer? n) (positive? n))
       n
       (begin
-        (format (current-error-port) "--cell-bits non valido: ~a~%" s)
+        (format (current-error-port) "invalid --cell-bits: ~a~%" s)
         (exit 2)))))
 
 (define (parse-eof-mode s)
@@ -194,7 +209,7 @@ exec guile -e main -s "$0" "$@"
          ("minus-one" 'minus-one)
          ("unchanged" 'unchanged)
          (_ (format (current-error-port)
-                    "--eof non valido: ~a (usa zero, minus-one o unchanged)~%" s)
+                    "invalid --eof: ~a (use zero, minus-one or unchanged)~%" s)
             (exit 2))))
 
 (define (main args)
@@ -208,7 +223,7 @@ exec guile -e main -s "$0" "$@"
                   (lambda () (run-file path))
                   (lambda (key line col msg)
                     (format (current-error-port)
-                            "~a: errore di sintassi (riga ~a, colonna ~a): ~a~%"
+                            "~a: syntax error (line ~a, column ~a): ~a~%"
                             path line col msg)
                     (exit 1))))))
       ((flag-value "--cell-bits=" (car args))
