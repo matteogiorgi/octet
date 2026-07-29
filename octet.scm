@@ -232,3 +232,5 @@ exec guile -e main -s "$0" "$@"
        => (lambda (v) (loop (cdr args) bits (parse-eof-mode v) path)))
       (path (usage-error))
       (else (loop (cdr args) bits eof (car args))))))
+
+; vim: ft=scheme
