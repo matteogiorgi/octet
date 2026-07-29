@@ -2,6 +2,9 @@
 
 A small [Brainfuck](https://esolangs.org/wiki/Brainfuck) interpreter written in [GNU Guile](https://www.gnu.org/software/guile/) Scheme.
 
+
+
+
 ## Design
 
 `octet.scm` runs a program in three stages:
@@ -14,9 +17,15 @@ The tape (the cell array Brainfuck's `<`/`>` move across) is represented as a Hu
 
 See the comments in [`octet.scm`](octet.scm) for the details; each section of the file documents the reasoning behind its own design choices.
 
+
+
+
 ## Requirements
 
 GNU Guile (tested with 3.0). No third-party dependencies -- only `(ice-9 match)`, `(ice-9 textual-ports)` and `(ice-9 binary-ports)` from Guile's own standard library.
+
+
+
 
 ## Usage
 
@@ -34,6 +43,7 @@ guile -e main -s octet.scm PROGRAM.bf
 
 Loading the file into a REPL (`guile -l octet.scm`, or plain `guile octet.scm`) does **not** run `main` -- it only defines everything, so `parse`, `compile-seq` and `run-string` remain usable interactively without side effects.
 
+
 ### Options
 
 | Flag            | Default | Description                                                           |
@@ -46,6 +56,7 @@ Loading the file into a REPL (`guile -l octet.scm`, or plain `guile octet.scm`) 
 ```
 
 Output (`.`) is always emitted as a single raw byte, regardless of `--cell-bits` -- a wide cell's low byte is what gets printed, matching the convention used by other Brainfuck implementations with cells wider than 8 bits.
+
 
 ### Exit codes
 
