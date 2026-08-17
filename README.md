@@ -15,7 +15,7 @@ A small [Brainfuck](https://esolangs.org/wiki/Brainfuck) interpreter written in 
 
 The tape (the cell array Brainfuck's `<`/`>` move across) is represented as a Huet-style zipper -- a triple of `(left cur right)` lists -- so moving the pointer is a plain, purely functional `cons`/`uncons`, with no mutable array underneath.
 
-See the comments in [`octet.scm`](octet.scm) for the details; each section of the file documents the reasoning behind its own design choices.
+See the comments in [`octet.scm`](https://github.com/matteogiorgi/octet/blob/main/octet.scm) for the details; each section of the file documents the reasoning behind its own design choices.
 
 
 
@@ -66,7 +66,7 @@ Output (`.`) is always emitted as a single raw byte, regardless of `--cell-bits`
 
 ## Example
 
-[`hello.bf`](hello.bf) is a classic Brainfuck "Hello World!" program, included as a smoke test:
+[`hello.bf`](https://github.com/matteogiorgi/octet/blob/main/hello.bf) is a classic Brainfuck "Hello World!" program, included as a smoke test:
 
 ```bash
 $ ./octet.scm hello.bf
