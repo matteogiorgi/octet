@@ -1,8 +1,6 @@
 # Eight-bit-cell Brainfuck interpreter
 
-A small [Brainfuck](https://esolangs.org/wiki/Brainfuck) interpreter written in [GNU Guile](https://www.gnu.org/software/guile/) Scheme.
-
-Brainfuck is an esoteric, minimalist language: a program is a string over just eight one-character commands, operating on an array of memory cells and a single movable pointer.
+Octet is a small [Brainfuck](https://esolangs.org/wiki/Brainfuck) interpreter written in [GNU Guile](https://www.gnu.org/software/guile/) Scheme. Brainfuck is an esoteric, minimalist language: a program is a string over just eight one-character commands, operating on an array of memory cells and a single movable pointer.
 
 | Command | Meaning                                                      |
 |---------|--------------------------------------------------------------|
@@ -17,12 +15,18 @@ Brainfuck is an esoteric, minimalist language: a program is a string over just e
 
 There is nothing else -- no variables, no named functions, no types. All control flow is `[...]` looping over a cell's value, so even simple arithmetic has to be built out of loops. For example, `++++++++[>++++++++<-]>+.` sets the first cell to 8, then loops that 8 times to add 8 to the second cell each time (8 x 8 = 64), moves onto it, adds one more, and prints the result -- 65 is the ASCII code for `A`, so the program outputs `A`.
 
+A few more idioms that show up in most Brainfuck programs:
+
+- `[-]` clears the current cell -- decrementing in a loop until it hits zero, regardless of the starting value, is the idiomatic way to zero a cell without a dedicated "set to zero" command.
+- `,.` echoes one byte of input straight back out -- read into the current cell, then print it.
+- `[->+<]` moves the current cell's value into the next cell, adding it there and leaving the source at zero -- the building block every larger loop-based arithmetic idiom is assembled from.
+
 
 
 
 ## Design
 
-`octet.scm` runs a program in three stages:
+[`octet.scm`](https://github.com/matteogiorgi/octet/blob/main/octet.scm) runs a program in three stages:
 
 1. **parse** -- the source string is turned into an AST. The six primitive commands become symbols, `[...]` loops become nested `(loop . body)` nodes, and unbalanced brackets are rejected with a line/column error instead of being silently tolerated.
 2. **compile** -- every AST node is turned into a `tape -> tape` closure once, so instruction dispatch happens at compile time, not on every iteration of a loop.
@@ -30,7 +34,7 @@ There is nothing else -- no variables, no named functions, no types. All control
 
 The tape (the cell array Brainfuck's `<`/`>` move across) is represented as a Huet-style zipper -- a triple of `(left cur right)` lists -- so moving the pointer is a plain, purely functional `cons`/`uncons`, with no mutable array underneath.
 
-See the comments in [`octet.scm`](https://github.com/matteogiorgi/octet/blob/main/octet.scm) for the details; each section of the file documents the reasoning behind its own design choices.
+See the comments in `octet.scm` for the details; each section of the file documents the reasoning behind its own design choices.
 
 
 
@@ -90,10 +94,3 @@ Output (`.`) is always emitted as a single raw byte, regardless of `--cell-bits`
 $ ./octet.scm hello.bf
 Hello World!
 ```
-
-
-
-
-## License
-
-[MIT](https://github.com/matteogiorgi/octet/blob/main/LICENSE)
