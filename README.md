@@ -2,6 +2,21 @@
 
 A small [Brainfuck](https://esolangs.org/wiki/Brainfuck) interpreter written in [GNU Guile](https://www.gnu.org/software/guile/) Scheme.
 
+Brainfuck is an esoteric, minimalist language: a program is a string over just eight one-character commands, operating on an array of memory cells and a single movable pointer.
+
+| Command | Meaning                                                      |
+|---------|--------------------------------------------------------------|
+| `>`     | move the pointer right                                       |
+| `<`     | move the pointer left                                        |
+| `+`     | increment the current cell                                   |
+| `-`     | decrement the current cell                                   |
+| `.`     | output the current cell as a byte                            |
+| `,`     | read one byte of input into the current cell                 |
+| `[`     | jump past the matching `]` if the current cell is zero       |
+| `]`     | jump back to the matching `[` if the current cell is nonzero |
+
+There is nothing else -- no variables, no named functions, no types. All control flow is `[...]` looping over a cell's value, so even simple arithmetic has to be built out of loops. For example, `++++++++[>++++++++<-]>+.` sets the first cell to 8, then loops that 8 times to add 8 to the second cell each time (8 x 8 = 64), moves onto it, adds one more, and prints the result -- 65 is the ASCII code for `A`, so the program outputs `A`.
+
 
 
 
@@ -64,6 +79,9 @@ Output (`.`) is always emitted as a single raw byte, regardless of `--cell-bits`
 - `1` -- syntax error (unbalanced brackets); reported with the line and column of the offending `[` or `]`.
 - `2` -- usage error: missing program file, or an invalid flag value.
 
+
+
+
 ## Example
 
 [`hello.bf`](https://github.com/matteogiorgi/octet/blob/main/hello.bf) is a classic Brainfuck "Hello World!" program, included as a smoke test:
@@ -72,3 +90,10 @@ Output (`.`) is always emitted as a single raw byte, regardless of `--cell-bits`
 $ ./octet.scm hello.bf
 Hello World!
 ```
+
+
+
+
+## License
+
+[MIT](https://github.com/matteogiorgi/octet/blob/main/LICENSE)
