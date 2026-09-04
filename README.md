@@ -1,6 +1,6 @@
 # Eight-bit-cell Brainfuck interpreter
 
-Octet is a small [Brainfuck](https://esolangs.org/wiki/Brainfuck) interpreter written in [GNU Guile](https://www.gnu.org/software/guile/) Scheme. Brainfuck is an esoteric, minimalist language: a program is a string over just eight one-character commands, operating on an array of memory cells and a single movable pointer.
+Octet is a small interpreter written in [GNU Guile](https://www.gnu.org/software/guile/) Scheme for [Brainfuck](https://esolangs.org/wiki/Brainfuck), an esoteric, minimalist language. A Brainfuck program is a string over just eight one-character commands, operating on an array of memory cells and a single movable pointer:
 
 | Command | Meaning                                                      |
 |---------|--------------------------------------------------------------|
