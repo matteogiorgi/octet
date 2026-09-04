@@ -81,9 +81,9 @@ Output (`.`) is always emitted as a single raw byte, regardless of `--cell-bits`
 
 ### Exit codes
 
-- `0` -- the program ran to completion.
-- `1` -- syntax error (unbalanced brackets); reported with the line and column of the offending `[` or `]`.
-- `2` -- usage error: missing program file, or an invalid flag value.
+- `0` — the program ran to completion.
+- `1` — syntax error (unbalanced brackets); reported with the line and column of the offending `[` or `]`.
+- `2` — usage error: missing program file, or an invalid flag value.
 
 
 
